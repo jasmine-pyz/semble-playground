@@ -1,0 +1,13 @@
+node_modules/
+
+.env
+
+*.tsbuildinfo
+
+*.log
+output.txt
+
+.DS_Store
+
+.vscode/
+.idea/

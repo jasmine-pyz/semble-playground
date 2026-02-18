@@ -1,7 +1,7 @@
 {
   "type": "module",
   "dependencies": {
-    "@cosmik.network/semble-pds-client": "^0.0.6",
+    "@cosmik.network/semble-pds-client": "file:/Users/jasminezou/Documents/Projects/semble/src/packages/semble-pds-client",
     "dotenv": "^17.2.4"
   },
   "devDependencies": {

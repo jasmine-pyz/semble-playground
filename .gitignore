@@ -11,3 +11,7 @@ output.txt
 
 .vscode/
 .idea/
+
+
+# Cache directory
+cache/

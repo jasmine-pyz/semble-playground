@@ -154,10 +154,8 @@ try {
     Array.from(userCounts.entries()).sort((a, b) => b[1].count - a[1].count)
   );
 
-  logSubSection("RESULTS");
-
+  logSubSection(`RESULTS for ${targetHandle}`);
   //   console.log(sortedUserCounts);
-
   if (sortedUserCounts.size > 0) {
     let index = 0;
     console.log(`\n Top 20 users with mutual cards:\n`);

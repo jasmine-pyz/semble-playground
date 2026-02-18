@@ -78,12 +78,6 @@ npx tsx mutualUserScript.tsx
 
 1. Enter a user handle (e.g., `wesleyfinck.org`)
 
-**Features:**
-
-- **Caching:** The script caches user card data in the `./cache` directory to avoid repeated API calls. Cached data is automatically used on subsequent runs.
-- **Pagination:** Automatically fetches all pages of user cards (50 cards per page)
-- **Progress tracking:** Shows progress while processing each URL
-
 **Output:**
 
 - Top 20 users with mutual cards

@@ -1,5 +1,7 @@
 import * as readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
+import path from "path";
+import fs from "fs/promises";
 import {
   logSection,
   logSuccess,
@@ -118,71 +120,119 @@ try {
     .filter((author) => author.handle !== originalAuthor)
     .slice(0, 10);
 
+  // Build output content
+  let outputContent = `MUTUAL CARD FINDER RESULTS\n`;
+  outputContent += `Collection: at://${handle}/${collectionRecordKey}\n`;
+  outputContent += `Author: ${originalAuthor}\n`;
+  outputContent += `Total Cards: ${data.urlCards.length}\n`;
+  outputContent += `${"=".repeat(70)}\n\n`;
+
   // Display all results (unfiltered)
   logSubSection("ALL RESULTS (UNFILTERED)");
+  outputContent += `ALL RESULTS (UNFILTERED)\n`;
+  outputContent += `${"=".repeat(70)}\n\n`;
 
-  console.log(
-    `\n🏆 Top Collections with Most Overlap (${allCollections.length} total):\n`
-  );
+  const topCollectionsTitle = `\n🏆 Top Collections with Most Overlap (${allCollections.length} total):\n`;
+  console.log(topCollectionsTitle);
+  outputContent += `Top Collections with Most Overlap (${allCollections.length} total):\n\n`;
+  
   allCollections.slice(0, 10).forEach((col, index) => {
     const percentage = ((col.count / data.urlCards.length) * 100).toFixed(1);
     const isSameAuthor =
       col.author === originalAuthor ? " 👤 (same author)" : "";
-    console.log(`${index + 1}. ${col.name}${isSameAuthor}`);
-    console.log(
-      `   ${col.count}/${data.urlCards.length} cards (${percentage}% overlap)`
-    );
-    console.log(`   Author: ${col.author}`);
-    console.log(`   URI: ${col.uri}\n`);
+    const line1 = `${index + 1}. ${col.name}${isSameAuthor}`;
+    const line2 = `   ${col.count}/${data.urlCards.length} cards (${percentage}% overlap)`;
+    const line3 = `   Author: ${col.author}`;
+    const line4 = `   URI: ${col.uri}\n`;
+    
+    console.log(line1);
+    console.log(line2);
+    console.log(line3);
+    console.log(line4);
+    
+    outputContent += `${line1}\n${line2}\n${line3}\n${line4}\n`;
   });
 
-  console.log(
-    `\n👥 Top Authors with Most Overlapping Cards (${allAuthors.length} total):\n`
-  );
+  const topAuthorsTitle = `\n👥 Top Authors with Most Overlapping Cards (${allAuthors.length} total):\n`;
+  console.log(topAuthorsTitle);
+  outputContent += `\nTop Authors with Most Overlapping Cards (${allAuthors.length} total):\n\n`;
+  
   allAuthors.slice(0, 10).forEach((author, index) => {
     const percentage = ((author.count / data.urlCards.length) * 100).toFixed(1);
     const isSameAuthor =
       author.handle === originalAuthor ? " 👤 (original author)" : "";
-    console.log(`${index + 1}. ${author.handle}${isSameAuthor}`);
-    console.log(
-      `   ${author.count}/${data.urlCards.length} cards (${percentage}% overlap)\n`
-    );
+    const line1 = `${index + 1}. ${author.handle}${isSameAuthor}`;
+    const line2 = `   ${author.count}/${data.urlCards.length} cards (${percentage}% overlap)\n`;
+    
+    console.log(line1);
+    console.log(line2);
+    
+    outputContent += `${line1}\n${line2}\n`;
   });
 
   // Display filtered results (excluding original author)
   logSubSection("FILTERED RESULTS (OTHER AUTHORS ONLY)");
+  outputContent += `\nFILTERED RESULTS (OTHER AUTHORS ONLY)\n`;
+  outputContent += `${"=".repeat(70)}\n\n`;
 
-  console.log(
-    `\n🏆 Top Collections from Other Authors (${filteredCollections.length} found):\n`
-  );
+  const filteredCollectionsTitle = `\n🏆 Top Collections from Other Authors (${filteredCollections.length} found):\n`;
+  console.log(filteredCollectionsTitle);
+  outputContent += `Top Collections from Other Authors (${filteredCollections.length} found):\n\n`;
+  
   if (filteredCollections.length > 0) {
     filteredCollections.forEach((col, index) => {
       const percentage = ((col.count / data.urlCards.length) * 100).toFixed(1);
-      console.log(`${index + 1}. ${col.name}`);
-      console.log(
-        `   ${col.count}/${data.urlCards.length} cards (${percentage}% overlap)`
-      );
-      console.log(`   Author: ${col.author}`);
-      console.log(`   URI: ${col.uri}\n`);
+      const line1 = `${index + 1}. ${col.name}`;
+      const line2 = `   ${col.count}/${data.urlCards.length} cards (${percentage}% overlap)`;
+      const line3 = `   Author: ${col.author}`;
+      const line4 = `   URI: ${col.uri}\n`;
+      
+      console.log(line1);
+      console.log(line2);
+      console.log(line3);
+      console.log(line4);
+      
+      outputContent += `${line1}\n${line2}\n${line3}\n${line4}\n`;
     });
   } else {
-    console.log("🎉 No overlapping collections from other authors!\n");
+    const noResultsMsg = "🎉 No overlapping collections from other authors!\n";
+    console.log(noResultsMsg);
+    outputContent += `${noResultsMsg}\n`;
   }
 
-  console.log(`\n👥 Top Authors (excluding ${originalAuthor}):\n`);
+  const filteredAuthorsTitle = `\n👥 Top Authors (excluding ${originalAuthor}):\n`;
+  console.log(filteredAuthorsTitle);
+  outputContent += `\nTop Authors (excluding ${originalAuthor}):\n\n`;
+  
   if (filteredAuthors.length > 0) {
     filteredAuthors.forEach((author, index) => {
       const percentage = ((author.count / data.urlCards.length) * 100).toFixed(
         1
       );
-      console.log(`${index + 1}. ${author.handle}`);
-      console.log(
-        `   ${author.count}/${data.urlCards.length} cards (${percentage}% overlap)\n`
-      );
+      const line1 = `${index + 1}. ${author.handle}`;
+      const line2 = `   ${author.count}/${data.urlCards.length} cards (${percentage}% overlap)\n`;
+      
+      console.log(line1);
+      console.log(line2);
+      
+      outputContent += `${line1}\n${line2}\n`;
     });
   } else {
-    console.log("🎉 No overlapping cards from other authors!\n");
+    const noAuthorsMsg = "🎉 No overlapping cards from other authors!\n";
+    console.log(noAuthorsMsg);
+    outputContent += `${noAuthorsMsg}\n`;
   }
+  
+  // Write to output file
+  const outputDir = "./output";
+  await fs.mkdir(outputDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+  const outputFile = path.join(
+    outputDir,
+    `mutual-collections-${handle.replace(/\./g, "_")}-${collectionRecordKey}-${timestamp}.txt`
+  );
+  await fs.writeFile(outputFile, outputContent);
+  logSuccess(`📄 Results saved to: ${outputFile}`);
 } catch (error) {
   console.error("❌ Error:", error);
 } finally {

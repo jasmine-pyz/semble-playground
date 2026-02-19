@@ -155,30 +155,52 @@ try {
   );
 
   logSubSection(`RESULTS for ${targetHandle}`);
+  
+  // Build output content
+  let outputContent = `RESULTS FOR ${targetHandle}\n`;
+  outputContent += `${"=".repeat(50)}\n\n`;
+  
   //   console.log(sortedUserCounts);
   if (sortedUserCounts.size > 0) {
     let index = 0;
     console.log(`\n Top 20 users with mutual cards:\n`);
+    outputContent += `Top 20 Users with Mutual Cards:\n\n`;
+    
     for (const [id, user] of sortedUserCounts) {
       if (index >= 20) break;
 
       const percentage = ((user.count / allUserCards.length) * 100).toFixed(1);
-      console.log(`${index + 1}. ${user.handle}`);
-      console.log(`   @${user.handle}`);
-      console.log(`   DID: ${id}`);
-      console.log(
-        `   ${user.count}/${allUserCards.length} mutual cards (${percentage}% overlap)`
-      );
+      const userLine = `${index + 1}. ${user.handle}`;
+      console.log(userLine);
+      outputContent += `${userLine}\n`;
+      
+      const atLine = `   @${user.handle}`;
+      console.log(atLine);
+      outputContent += `${atLine}\n`;
+      
+      const didLine = `   DID: ${id}`;
+      console.log(didLine);
+      outputContent += `${didLine}\n`;
+      
+      const overlapLine = `   ${user.count}/${allUserCards.length} mutual cards (${percentage}% overlap)`;
+      console.log(overlapLine);
+      outputContent += `${overlapLine}\n`;
 
       // Show first 3 mutual URLs as examples
       console.log(`   Mutual URLs:`);
+      outputContent += `   Mutual URLs:\n`;
       user.mutualCards.slice(0, 3).forEach((card: any) => {
-        console.log(`     • ${card.url}`);
+        const urlLine = `     • ${card.url}`;
+        console.log(urlLine);
+        outputContent += `${urlLine}\n`;
       });
       if (user.mutualCards.length > 3) {
-        console.log(`     ... and ${user.mutualCards.length - 3} more`);
+        const moreLine = `     ... and ${user.mutualCards.length - 3} more`;
+        console.log(moreLine);
+        outputContent += `${moreLine}\n`;
       }
       console.log();
+      outputContent += `\n`;
 
       index++;
     }
@@ -186,8 +208,16 @@ try {
 
   // Summary statistics
   logSubSection("STATISTICS");
-  console.log(`Total URLs checked: ${allUserCards.length}`);
-  console.log(`Users with at least 1 mutual card: ${sortedUserCounts.size}`);
+  outputContent += `\nSTATISTICS\n`;
+  outputContent += `${"=".repeat(50)}\n`;
+  
+  const totalLine = `Total URLs checked: ${allUserCards.length}`;
+  console.log(totalLine);
+  outputContent += `${totalLine}\n`;
+  
+  const usersLine = `Users with at least 1 mutual card: ${sortedUserCounts.size}`;
+  console.log(usersLine);
+  outputContent += `${usersLine}\n`;
 
   if (sortedUserCounts.size > 0) {
     const firstEntry = Array.from(sortedUserCounts.values())[0];
@@ -198,9 +228,25 @@ try {
         0
       ) / sortedUserCounts.size
     ).toFixed(1);
-    console.log(`Max overlap: ${maxOverlap} cards`);
-    console.log(`Average overlap: ${avgOverlap} cards`);
+    const maxLine = `Max overlap: ${maxOverlap} cards`;
+    console.log(maxLine);
+    outputContent += `${maxLine}\n`;
+    
+    const avgLine = `Average overlap: ${avgOverlap} cards`;
+    console.log(avgLine);
+    outputContent += `${avgLine}\n`;
   }
+  
+  // Write to output file
+  const outputDir = "./output";
+  await fs.mkdir(outputDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+  const outputFile = path.join(
+    outputDir,
+    `mutual-users-${targetHandle.replace(/\./g, "_")}-${timestamp}.txt`
+  );
+  await fs.writeFile(outputFile, outputContent);
+  logSuccess(`📄 Results saved to: ${outputFile}`);
 } catch (error) {
   console.error("❌ Error:", error);
   if (error instanceof Error) {

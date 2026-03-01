@@ -38,7 +38,7 @@ npm install
 **How to run:**
 
 ```bash
-npx tsx mutualCardScript.tsx
+npx tsx scripts/mutualCardScript.tsx
 ```
 
 **Interactive prompts:**
@@ -71,7 +71,7 @@ npx tsx mutualCardScript.tsx
 **How to run:**
 
 ```bash
-npx tsx mutualUserScript.tsx
+npx tsx scripts/mutualUserScript.tsx
 ```
 
 **Interactive prompts:**

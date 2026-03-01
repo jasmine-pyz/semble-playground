@@ -5,7 +5,7 @@ import {
   logSuccess,
   logInfo,
   logAction,
-} from "./utils/logger.tsx";
+} from "../utils/logger.tsx";
 
 import dotenv from "dotenv";
 

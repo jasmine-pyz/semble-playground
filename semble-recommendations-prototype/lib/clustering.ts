@@ -127,10 +127,10 @@ const STOPWORDS = new Set([
 
 function getCardText(card: Card): string {
   return [
-    card.metadata?.title,
     card.cardContent?.title,
     card.cardContent?.description,
-    card.metadata?.description,
+    card.cardContent?.siteName,
+    card.cardContent?.author,
   ]
     .filter(Boolean)
     .join(" ");
@@ -856,9 +856,10 @@ export function clusterByTFIDF(
 }
 
 export function clusterBySiteName(cards: Card[]): TopicCluster[] {
+  console.log("sample card:", JSON.stringify(cards[0], null, 2)); // add this
   const groups = new Map<string, Card[]>();
   for (const card of cards) {
-    const key = card.metadata?.siteName ?? "Uncategorized";
+    const key = card.cardContent?.siteName || "Uncategorized";
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(card);
   }
@@ -866,26 +867,6 @@ export function clusterBySiteName(cards: Card[]): TopicCluster[] {
     .map(([name, groupCards]) => ({
       id: name.toLowerCase().replace(/\s+/g, "-"),
       name,
-      cards: groupCards,
-      keywords: extractKeywordsFromVectors(
-        buildTFIDF(groupCards.map((c) => tokenize(getCardText(c)))),
-        5
-      ),
-    }))
-    .sort((a, b) => b.cards.length - a.cards.length);
-}
-
-export function clusterByCardContentTitle(cards: Card[]): TopicCluster[] {
-  const groups = new Map<string, Card[]>();
-  for (const card of cards) {
-    const key = card.cardContent?.title ?? "No Title";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(card);
-  }
-  return [...groups.entries()]
-    .map(([title, groupCards], idx) => ({
-      id: `title-${idx}`,
-      name: capitalizeWords(title),
       cards: groupCards,
       keywords: extractKeywordsFromVectors(
         buildTFIDF(groupCards.map((c) => tokenize(getCardText(c)))),
@@ -1166,5 +1147,33 @@ export async function clusterByEmbedding(
         keywords,
       };
     })
+    .sort((a, b) => b.cards.length - a.cards.length);
+}
+
+function formatType(type: string): string {
+  const labels: Record<string, string> = {
+    software: "Software & Tools",
+    social: "Social & Community",
+  };
+  return labels[type] ?? capitalizeWords(type);
+}
+
+export function clusterByType(cards: Card[]): TopicCluster[] {
+  const groups = new Map<string, Card[]>();
+  for (const card of cards) {
+    const key = card.cardContent?.type || "uncategorized";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(card);
+  }
+  return [...groups.entries()]
+    .map(([type, groupCards], idx) => ({
+      id: `type-${idx}`,
+      name: formatType(type),
+      cards: groupCards,
+      keywords: extractKeywordsFromVectors(
+        buildTFIDF(groupCards.map((c) => tokenize(getCardText(c)))),
+        5
+      ),
+    }))
     .sort((a, b) => b.cards.length - a.cards.length);
 }

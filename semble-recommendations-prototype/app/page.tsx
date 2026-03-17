@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SembleAPI } from "@/lib/api";
 import {
   clusterByTFIDF,
-  clusterByCardContentTitle,
+  clusterByType,
   clusterBySiteName,
   clusterByEmbedding,
   clusterByEmbeddingAgg,
@@ -21,42 +21,44 @@ type ClusterMode =
   | "type"
   | "site"
   | "embedding-kmeans"
-  //   | "embedding-agglomerative"
+  | "embedding-agglomerative"
   | "embedding-agg-heap";
 
 const MODES: { id: ClusterMode; label: string; description: string }[] = [
   {
     id: "tfidf",
-    label: "By Topic",
-    description: "TF-IDF + K-Means - finds thematic groups automatically",
+    label: "TF-IDF",
+    description:
+      "Groups by shared keywords + K-Means (fast, no AI, non-deterministic: results may vary between runs)",
   },
+
   {
     id: "embedding-kmeans",
-    label: "By Embedding(K)",
+    label: "Embedding(1)",
     description:
-      "Using embeddings (meaning-based) via Ollama (nomic-embed-text) - assigns each card to nearest center",
+      "K-Means(via Ollama, nomic-embed-text) - picks K topic centers, assigns each card to its nearest one. Fast but requires guessing the right number of clusters. (non-deterministic)",
   },
   //   {
   //     id: "embedding-agglomerative",
-  //     label: "By Embedding(A)",
+  //     label: "By Embedding(SLOW)",
   //     description:
   //       "Using embeddings (meaning-based) via Ollama (nomic-embed-text) - agglomerative threshold",
   //   },
   {
     id: "embedding-agg-heap",
-    label: "By Embedding(agglomerative)",
+    label: "Embedding(2)",
     description:
-      "Using embeddings (meaning-based) via Ollama (nomic-embed-text) - bottom-up, merges most similar pairs",
-  },
-  {
-    id: "type",
-    label: "By Type",
-    description: "Groups by card content type label",
+      " agglomerative (via Ollama, nomic-embed-text)starts with every card separate, merges the most similar pairs bottom-up until a threshold is hit. Slower but finds natural cluster boundaries (deterministic).",
   },
   {
     id: "site",
     label: "By Site",
     description: "Groups by source domain",
+  },
+  {
+    id: "type",
+    label: "By Type",
+    description: "Groups by content type (research, article, video, etc.)",
   },
 ];
 function PrototypeContent() {
@@ -66,6 +68,8 @@ function PrototypeContent() {
   const [recsPage, setRecsPage] = useState(0);
   const RECS_PER_PAGE = 12;
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
+  const [clustersPage, setClustersPage] = useState(0);
+  const CLUSTERS_PER_PAGE = 12;
 
   const api = new SembleAPI();
 
@@ -101,10 +105,10 @@ function PrototypeContent() {
       switch (clusterMode) {
         case "tfidf":
           return clusterByTFIDF(library.cards); // auto numClusters, silhouette-guided
-        case "type":
-          return clusterByCardContentTitle(library.cards);
         case "site":
           return clusterBySiteName(library.cards);
+        case "type":
+          return clusterByType(library.cards);
         case "embedding-kmeans":
           return await clusterByEmbedding(library.cards, { kMin: 5, kMax: 20 });
         // case "embedding-agglomerative":
@@ -113,7 +117,7 @@ function PrototypeContent() {
         //   });
         case "embedding-agg-heap":
           return await clusterByEmbeddingAggHeap(library.cards, {
-            similarityThreshold: 0.72,
+            similarityThreshold: 0.65, // experiment with this value
           });
 
         default:
@@ -147,6 +151,11 @@ function PrototypeContent() {
     setRecsPage(0);
   }, [userHandle, clusterMode, selectedCluster, recommendations?.length]);
 
+  // Reset clusters pagination when user, cluster mode, or cluster set changes
+  useEffect(() => {
+    setClustersPage(0);
+  }, [userHandle, clusterMode, clusters?.length]);
+
   // Clear any selected cluster when the user or clustering mode changes
   useEffect(() => {
     setSelectedCluster(null);
@@ -156,6 +165,12 @@ function PrototypeContent() {
   // Derived recommendations to display — either all or filtered by selected cluster
   const displayedRecommendations = (recommendations || []).filter((r) =>
     selectedCluster ? r.appearsInClusters.includes(selectedCluster) : true
+  );
+
+  // Derived clusters page to display
+  const displayedClusters = (clusters || []).slice(
+    clustersPage * CLUSTERS_PER_PAGE,
+    (clustersPage + 1) * CLUSTERS_PER_PAGE
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -213,7 +228,14 @@ function PrototypeContent() {
         <div className="bg-white rounded-xl shadow-lg p-6 mb-2 border-2 border-indigo-100">
           <div className="flex items-center gap-4 mb-6">
             <h1 className="text-2xl font-bold text-gray-900">
-              Recommendations for @{userHandle} ({library?.cards.length ?? 0}{" "}
+              Recommendations for @{userHandle} (
+              {libraryLoading ? (
+                <span className="inline-block text-sm text-gray-500 animate-pulse">
+                  Loading…
+                </span>
+              ) : (
+                <span>{library?.cards.length ?? 0}</span>
+              )}{" "}
               cards)
             </h1>
             {/* User Change Panel */}
@@ -265,7 +287,7 @@ function PrototypeContent() {
                   </button>
                 ))}
               </div>
-              <div className="text-xs font-bold text-gray-900 bg-orange-50 border-l-5 border-orange-500 px-4 h-10 rounded-r-md flex items-center justify-center max-w-lg">
+              <div className="text-xs font-medium text-gray-900 bg-orange-50 border-l-5 border-orange-500 px-6 h-10 rounded-r-md flex items-center justify-center max-w-2xl">
                 {MODES.find((m) => m.id === clusterMode)?.description}
               </div>
             </div>
@@ -294,11 +316,11 @@ function PrototypeContent() {
                     <p className="text-3xl font-bold text-gray-600">
                       {clusters.length}
                     </p>
-                    {clusterMode === "tfidf" && (
+                    {/* {clusterMode === "tfidf" && (
                       <p className="text-xs text-gray-500 mt-1">
                         Auto-detected from {library?.cards.length ?? 0} cards
                       </p>
-                    )}
+                    )} */}
                   </>
                 )}
               </div>
@@ -355,49 +377,95 @@ function PrototypeContent() {
               Topic Clusters
             </h3>
             {libraryLoading || clustersLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
-              </div>
-            ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {clusters.slice(0, 12).map((cluster) => (
+                {Array.from({ length: CLUSTERS_PER_PAGE }).map((_, i) => (
                   <div
-                    key={cluster.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedCluster(cluster.name)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        setSelectedCluster(cluster.name);
-                      }
-                    }}
-                    className={`border rounded-md p-2 transition cursor-pointer focus:outline-none ${
-                      selectedCluster === cluster.name
-                        ? "border-orange-500 bg-orange-50 shadow-sm"
-                        : "border-gray-200 hover:border-orange-400 hover:shadow-sm"
-                    }`}
+                    key={i}
+                    className="border border-gray-200 rounded-md p-2 animate-pulse bg-white"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-semibold text-gray-900 line-clamp-1 text-sm">
-                        {cluster.name}
-                      </h3>
-                      <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
-                        {cluster.cards.length}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {cluster.keywords.slice(0, 4).map((keyword) => (
-                        <span
-                          key={keyword}
-                          className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-medium rounded-full"
-                        >
-                          {keyword}
-                        </span>
-                      ))}
+                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
+                    <div className="h-3 bg-gray-200 rounded w-1/4 mb-3" />
+                    <div className="flex flex-wrap gap-2">
+                      <div className="h-6 w-16 bg-gray-200 rounded" />
+                      <div className="h-6 w-12 bg-gray-200 rounded" />
+                      <div className="h-6 w-10 bg-gray-200 rounded" />
                     </div>
                   </div>
                 ))}
               </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {displayedClusters.map((cluster) => (
+                    <div
+                      key={cluster.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedCluster(cluster.name)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          setSelectedCluster(cluster.name);
+                        }
+                      }}
+                      className={`border rounded-md p-2 transition cursor-pointer focus:outline-none ${
+                        selectedCluster === cluster.name
+                          ? "border-orange-500 bg-orange-50 shadow-sm"
+                          : "border-gray-200 hover:border-orange-400 hover:shadow-sm"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-semibold text-gray-900 line-clamp-1 text-sm">
+                          {cluster.name}
+                        </h3>
+                        <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
+                          {cluster.cards.length}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {cluster.keywords.slice(0, 4).map((keyword) => (
+                          <span
+                            key={keyword}
+                            className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-medium rounded-full"
+                          >
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Clusters Pagination */}
+                <div className="flex items-center justify-between mt-4">
+                  <span className="text-sm text-gray-500">
+                    Showing {clustersPage * CLUSTERS_PER_PAGE + 1}–
+                    {Math.min(
+                      (clustersPage + 1) * CLUSTERS_PER_PAGE,
+                      clusters.length
+                    )}{" "}
+                    of {clusters.length}
+                  </span>
+                  <div className="flex gap-2">
+                    {clustersPage > 0 && (
+                      <button
+                        onClick={() => setClustersPage((p) => p - 1)}
+                        className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                      >
+                        Previous
+                      </button>
+                    )}
+                    {(clustersPage + 1) * CLUSTERS_PER_PAGE <
+                      clusters.length && (
+                      <button
+                        onClick={() => setClustersPage((p) => p + 1)}
+                        className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                      >
+                        Next
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -513,23 +581,23 @@ function PrototypeContent() {
                   of {displayedRecommendations.length}
                 </span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => setRecsPage((p) => p - 1)}
-                    disabled={recsPage === 0}
-                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setRecsPage((p) => p + 1)}
-                    disabled={
-                      (recsPage + 1) * RECS_PER_PAGE >=
-                      displayedRecommendations.length
-                    }
-                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                  >
-                    Next
-                  </button>
+                  {recsPage > 0 && (
+                    <button
+                      onClick={() => setRecsPage((p) => p - 1)}
+                      className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                    >
+                      Previous
+                    </button>
+                  )}
+                  {(recsPage + 1) * RECS_PER_PAGE <
+                    displayedRecommendations.length && (
+                    <button
+                      onClick={() => setRecsPage((p) => p + 1)}
+                      className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                    >
+                      Next
+                    </button>
+                  )}
                 </div>
               </div>
             </>

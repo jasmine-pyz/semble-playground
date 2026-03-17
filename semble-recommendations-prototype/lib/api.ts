@@ -27,6 +27,21 @@ export interface CardContent {
   title?: string;
   description?: string;
   note?: string;
+  author?: string;
+  siteName?: string;
+  type?: UrlType;
+}
+
+enum UrlType {
+  ARTICLE = "article",
+  LINK = "link",
+  BOOK = "book",
+  RESEARCH = "research",
+  AUDIO = "audio",
+  VIDEO = "video",
+  SOCIAL = "social",
+  EVENT = "event",
+  SOFTWARE = "software",
 }
 
 export interface Card {

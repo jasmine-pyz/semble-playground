@@ -1,21 +1,22 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Semble Recommendations — Prototype
 
-## Getting Started
+This prototype clusters a user's saved Semble cards and generates URL recommendations using Semble search endpoints. It's intended as an exploratory UI and algorithm playground.
 
-First, run the development server:
+What this project does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Loads a user's saved cards from Semble (proxied via local API routes)
+- Builds topic clusters using multiple strategies (TF-IDF, embedding-based clustering, by-site, by-type)
+- Queries Semble semantic-search / similar-urls per cluster and aggregates recommendations
+- Renders a compact UI with cluster statistics, selectable clusters, and paginated recommendations
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Quick start (development)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Install dependencies
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   npm install
+
+2. Start the dev server
+
+   npm run dev
+
+3. Open http://localhost:3000 and enter a Semble/Bluesky handle to load that user's library.

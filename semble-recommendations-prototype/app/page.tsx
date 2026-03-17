@@ -603,7 +603,9 @@ function PrototypeContent() {
             </>
           ) : (
             <p className="text-center text-gray-700 font-medium py-12">
-              No recommendations found for this selection.
+              No recommendations found for this selection / or this is not a top
+              5 cluster so no recommendations were generated using it (for
+              now!).
             </p>
           )}
         </div>

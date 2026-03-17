@@ -29,8 +29,108 @@ function getContentSignature(
 }
 
 /**
- * Get recommendations using semantic search based on cluster topics
- * Uses cluster keywords to find semantically similar content
+ * Normalize a URL for comparison:
+ * - Lowercase the scheme + host
+ * - Remove trailing slashes
+ * - Strip common tracking params (utm_*, fbclid, etc.)
+ */
+function normalizeUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    // Lowercase scheme and host
+    u.hostname = u.hostname.toLowerCase();
+    u.protocol = u.protocol.toLowerCase();
+    // Remove well-known tracking / session params
+    const trackingParams = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "fbclid",
+      "gclid",
+      "msclkid",
+      "ref",
+      "source",
+    ];
+    trackingParams.forEach((p) => u.searchParams.delete(p));
+    // Remove trailing slash on pathname
+    u.pathname = u.pathname.replace(/\/+$/, "") || "/";
+    return u.toString();
+  } catch {
+    // Not a valid URL — return lowercased original as fallback
+    return raw.toLowerCase().trim();
+  }
+}
+
+/**
+ * Build lookup structures from the user's existing library so we can
+ * filter recommendations locally — without relying on `urlInLibrary`
+ * (which requires authentication and is unavailable here).
+ *
+ * Two layers of matching:
+ *   1. Exact (normalized) URL match  — fast O(1) set lookup
+ *   2. Content-signature match        — catches re-published / AMP duplicates
+ */
+function buildLibraryIndex(existingCards: Card[]): {
+  urlSet: Set<string>;
+  contentSigSet: Set<string>;
+} {
+  const urlSet = new Set<string>();
+  const contentSigSet = new Set<string>();
+
+  for (const card of existingCards) {
+    // Layer 1: normalized URL
+    urlSet.add(normalizeUrl(card.url));
+
+    // Layer 2: content signature (skip empty signatures)
+    const sig = getContentSignature(
+      card.metadata?.title,
+      card.metadata?.description,
+      card.metadata?.author,
+      card.metadata?.siteName
+    );
+    if (sig.trim().length > 0) {
+      contentSigSet.add(sig);
+    }
+  }
+
+  console.log(
+    `📚 Library index built: ${urlSet.size} URLs, ${contentSigSet.size} content signatures`
+  );
+  return { urlSet, contentSigSet };
+}
+
+/**
+ * Returns true if a recommended result already exists in the user's library.
+ * Checks URL first (cheap), then falls back to content signature (catches dupes).
+ */
+function isAlreadyInLibrary(
+  urlSet: Set<string>,
+  contentSigSet: Set<string>,
+  candidateUrl: string,
+  title?: string,
+  description?: string,
+  author?: string,
+  siteName?: string
+): boolean {
+  // Layer 1: normalized URL match
+  if (urlSet.has(normalizeUrl(candidateUrl))) return true;
+
+  // Layer 2: content signature match
+  const sig = getContentSignature(title, description, author, siteName);
+  if (sig.trim().length > 0 && contentSigSet.has(sig)) return true;
+
+  return false;
+}
+
+/**
+ * Get recommendations using semantic search based on cluster topics.
+ * Uses cluster keywords to find semantically similar content.
+ *
+ * NOTE: `urlInLibrary` from the Semble API requires authentication and is
+ * NOT used here.  Instead, we build a local index from `existingCards` and
+ * filter recommendations against it.
  */
 export async function getRecommendations(
   api: SembleAPI,
@@ -39,33 +139,16 @@ export async function getRecommendations(
   maxClusters = 5,
   resultsPerCluster = 10
 ): Promise<Recommendation[]> {
-  // Build a Set of existing URLs AND content signatures
-  const existingUrls = new Set(existingCards.map((c) => c.url));
-  const existingContentSignatures = new Set(
-    existingCards.map((c) =>
-      getContentSignature(
-        c.metadata?.title || c.cardContent?.title,
-        c.metadata?.description || c.cardContent?.description,
-        c.metadata?.author,
-        c.metadata?.siteName
-      )
-    )
-  );
-
   console.log(`🔍 Getting recommendations for ${maxClusters} clusters`);
-  console.log(
-    `📚 Existing URLs in library (${existingUrls.size}):`,
-    Array.from(existingUrls).slice(0, 5)
-  );
   console.log(`📝 Total cards in library: ${existingCards.length}`);
-  console.log(
-    `🔖 Content signatures created: ${existingContentSignatures.size}`
-  );
+
+  // Build local library index for filtering (replaces urlInLibrary check)
+  const { urlSet, contentSigSet } = buildLibraryIndex(existingCards);
 
   // Take top N clusters (largest/most important)
   const topClusters = clusters
     .slice(0, maxClusters)
-    .filter((c) => c.keywords.length > 0); // Only clusters with keywords
+    .filter((c) => c.keywords.length > 0);
 
   console.log(
     `📊 Using clusters: ${topClusters.map((c) => c.name).join(", ")}`
@@ -73,9 +156,7 @@ export async function getRecommendations(
 
   // For each cluster, search using its keywords
   const searchPromises = topClusters.map(async (cluster) => {
-    // Create search query from top keywords
     const query = cluster.keywords.slice(0, 3).join(" ");
-
     console.log(
       `🔎 Searching for cluster "${cluster.name}" with query: "${query}"`
     );
@@ -83,13 +164,9 @@ export async function getRecommendations(
     try {
       const results = await api.semanticSearch(query, {
         limit: resultsPerCluster,
-        threshold: 0.4, // Moderate threshold for relevance
+        threshold: 0.4,
       });
-
-      return {
-        clusterName: cluster.name,
-        results,
-      };
+      return { clusterName: cluster.name, results };
     } catch (error) {
       console.error(`❌ Error searching for cluster ${cluster.name}:`, error);
       return {
@@ -100,11 +177,11 @@ export async function getRecommendations(
   });
 
   const allResults = await Promise.all(searchPromises);
-
   console.log(`✅ Got results from ${allResults.length} clusters`);
 
   // Score and deduplicate
   const urlScores = new Map<string, Recommendation>();
+  let filteredByLocalIndex = 0;
 
   allResults.forEach(({ clusterName, results }) => {
     console.log(
@@ -112,49 +189,48 @@ export async function getRecommendations(
     );
 
     results.urls.forEach((urlData) => {
-      // Create content signature for this recommendation
-      const contentSig = getContentSignature(
-        urlData.metadata?.title,
-        urlData.metadata?.description,
-        urlData.metadata?.author,
-        urlData.metadata?.siteName
-      );
+      const { url, metadata } = urlData;
 
-      // DEBUG: Log first few URLs to check format
-      if (urlScores.size < 3) {
-        console.log(`🔎 Checking URL: "${urlData.url}"`);
-        console.log(`   Content: "${contentSig}"`);
-        console.log(
-          `   Already in library (URL)? ${existingUrls.has(urlData.url)}`
-        );
-        console.log(
-          `   Already in library (content)? ${existingContentSignatures.has(
-            contentSig
-          )}`
-        );
-      }
-
-      // Skip if already in user's library (by URL OR content signature)
+      // Filter against local library index (auth-free replacement for urlInLibrary)
       if (
-        existingUrls.has(urlData.url) ||
-        existingContentSignatures.has(contentSig)
+        isAlreadyInLibrary(
+          urlSet,
+          contentSigSet,
+          url,
+          metadata?.title,
+          metadata?.description,
+          metadata?.author,
+          metadata?.siteName
+        )
       ) {
+        filteredByLocalIndex++;
         return;
       }
 
-      const existing = urlScores.get(urlData.url);
+      // DEBUG: log first few candidates
+      if (urlScores.size < 3) {
+        console.log(`🔎 New candidate URL: "${url}"`);
+        console.log(
+          `   Content sig: "${getContentSignature(
+            metadata?.title,
+            metadata?.description,
+            metadata?.author,
+            metadata?.siteName
+          )}"`
+        );
+      }
 
+      const existing = urlScores.get(url);
       if (existing) {
-        // Boost score if appears in multiple cluster searches
         existing.score += 1;
         existing.appearsInClusters.push(clusterName);
       } else {
-        urlScores.set(urlData.url, {
-          url: urlData.url,
-          title: urlData.metadata?.title,
-          description: urlData.metadata?.description,
-          siteName: urlData.metadata?.siteName,
-          score: 1, // Base score
+        urlScores.set(url, {
+          url,
+          title: metadata?.title,
+          description: metadata?.description,
+          siteName: metadata?.siteName,
+          score: 1,
           appearsInClusters: [clusterName],
           urlLibraryCount: urlData.urlLibraryCount,
         });
@@ -163,54 +239,20 @@ export async function getRecommendations(
   });
 
   console.log(
+    `ℹ️ Filtered ${filteredByLocalIndex} results already present in local library index`
+  );
+  console.log(
     `📦 Found ${urlScores.size} unique recommendations (after filtering)`
   );
-  console.log(`🚫 Filtered out URLs already in library (URL-based)`);
-  console.log(`🚫 Filtered out URLs already in library (content-based)`);
 
-  // Sort by:
-  // 1. Score (appears in multiple clusters = more relevant)
-  // 2. urlLibraryCount (popularity)
-  const sortedRecs = Array.from(urlScores.values()).sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return b.urlLibraryCount - a.urlLibraryCount;
-  });
-
-  // FINAL CHECK: Verify no recommendations are in existing URLs (by URL or content)
-  const urlDuplicates = sortedRecs.filter((rec) => existingUrls.has(rec.url));
-  const contentDuplicates = sortedRecs.filter((rec) => {
-    const sig = getContentSignature(
-      rec.title,
-      rec.description,
-      undefined, // author not available in recommendations
-      rec.siteName
-    );
-    return existingContentSignatures.has(sig);
-  });
-
-  if (urlDuplicates.length > 0) {
-    console.warn(
-      `⚠️ WARNING: Found ${urlDuplicates.length} URL duplicates that should have been filtered!`
-    );
-    console.warn(`   First duplicate: ${urlDuplicates[0].url}`);
-  } else if (contentDuplicates.length > 0) {
-    console.warn(
-      `⚠️ WARNING: Found ${contentDuplicates.length} content duplicates that should have been filtered!`
-    );
-    console.warn(`   First duplicate: ${contentDuplicates[0].url}`);
-  } else {
-    console.log(`✅ Verified: No duplicates in final recommendations`);
-  }
-
-  return sortedRecs;
+  return Array.from(urlScores.values()).sort((a, b) => b.score - a.score);
 }
 
 /**
- * Alternative: Get recommendations using similar URLs
- * Uses representative cards from each cluster
- * (Keep this as a fallback option)
+ * Alternative: Get recommendations using similar URLs.
+ * Uses representative cards from each cluster as seed URLs.
+ *
+ * Same auth-free filtering approach as getRecommendations above.
  */
 export async function getRecommendationsBySimilarUrls(
   api: SembleAPI,
@@ -219,27 +261,17 @@ export async function getRecommendationsBySimilarUrls(
   maxClusters = 5,
   cardsPerCluster = 3
 ): Promise<Recommendation[]> {
-  const existingUrls = new Set(existingCards.map((c) => c.url));
-  const existingContentSignatures = new Set(
-    existingCards.map((c) =>
-      getContentSignature(
-        c.metadata?.title || c.cardContent?.title,
-        c.metadata?.description || c.cardContent?.description,
-        c.metadata?.author,
-        c.metadata?.siteName
-      )
-    )
-  );
-
   console.log(
     `🔍 Getting recommendations via similar URLs for ${maxClusters} clusters`
   );
+
+  // Build local library index for filtering
+  const { urlSet, contentSigSet } = buildLibraryIndex(existingCards);
 
   const topClusters = clusters.slice(0, maxClusters);
 
   const searchPromises = topClusters.flatMap((cluster) => {
     const representativeCards = cluster.cards.slice(0, cardsPerCluster);
-
     return representativeCards.map(async (card) => ({
       clusterName: cluster.name,
       results: await api.getSimilarUrls(card.url, {
@@ -252,35 +284,37 @@ export async function getRecommendationsBySimilarUrls(
   const allResults = await Promise.all(searchPromises);
 
   const urlScores = new Map<string, Recommendation>();
+  let filteredByLocalIndex = 0;
 
   allResults.forEach(({ clusterName, results }) => {
     results.urls.forEach((urlData) => {
-      const contentSig = getContentSignature(
-        urlData.metadata?.title,
-        urlData.metadata?.description,
-        urlData.metadata?.author,
-        urlData.metadata?.siteName
-      );
+      const { url, metadata } = urlData;
 
-      // Skip if already in user's library (by URL OR content signature)
       if (
-        existingUrls.has(urlData.url) ||
-        existingContentSignatures.has(contentSig)
+        isAlreadyInLibrary(
+          urlSet,
+          contentSigSet,
+          url,
+          metadata?.title,
+          metadata?.description,
+          metadata?.author,
+          metadata?.siteName
+        )
       ) {
+        filteredByLocalIndex++;
         return;
       }
 
-      const existing = urlScores.get(urlData.url);
-
+      const existing = urlScores.get(url);
       if (existing) {
         existing.score += 1;
         existing.appearsInClusters.push(clusterName);
       } else {
-        urlScores.set(urlData.url, {
-          url: urlData.url,
-          title: urlData.metadata?.title,
-          description: urlData.metadata?.description,
-          siteName: urlData.metadata?.siteName,
+        urlScores.set(url, {
+          url,
+          title: metadata?.title,
+          description: metadata?.description,
+          siteName: metadata?.siteName,
           score: 1,
           appearsInClusters: [clusterName],
           urlLibraryCount: urlData.urlLibraryCount,
@@ -289,10 +323,9 @@ export async function getRecommendationsBySimilarUrls(
     });
   });
 
-  return Array.from(urlScores.values()).sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return b.urlLibraryCount - a.urlLibraryCount;
-  });
+  console.log(
+    `ℹ️ Filtered ${filteredByLocalIndex} results already present in local library index`
+  );
+
+  return Array.from(urlScores.values()).sort((a, b) => b.score - a.score);
 }

@@ -38,8 +38,8 @@ console.log("🧪 Testing Content-Based Filtering\n");
 
 // Test 1: URL duplicates
 console.log("Test 1: URL Duplicates");
-const url1 = "https://example.com/article";
-const url2 = "https://example.com/article?utm_source=twitter";
+const url1: string = "https://example.com/article";
+const url2: string = "https://example.com/article?utm_source=twitter";
 
 console.log(`  URL 1: ${url1}`);
 console.log(`  URL 2: ${url2}`);
